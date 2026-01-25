@@ -21,3 +21,15 @@ Thumbs.db
 
 # External deps
 external/
+
+# ---- repro artifacts (do not commit) ----
+out/
+data/
+external/
+
+# local csv artifacts
+eval_demo.csv
+
+# backups
+*.bak
+*.bak2

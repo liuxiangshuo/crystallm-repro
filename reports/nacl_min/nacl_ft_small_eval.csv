@@ -1,0 +1,11 @@
+file,hash16,parse_ok,reduced_formula,sites,error
+sample_1.cif,c963cd3f330ea263,True,NaCl,4,
+sample_10.cif,c963cd3f330ea263,True,NaCl,4,
+sample_2.cif,9b7b34c18ac3f1e7,True,NaCl,4,
+sample_3.cif,c963cd3f330ea263,True,NaCl,4,
+sample_4.cif,c963cd3f330ea263,True,NaCl,4,
+sample_5.cif,c963cd3f330ea263,True,NaCl,4,
+sample_6.cif,33b3cf2e5a4662ce,True,NaCl,4,
+sample_7.cif,c963cd3f330ea263,True,NaCl,4,
+sample_8.cif,c963cd3f330ea263,True,NaCl,4,
+sample_9.cif,a61f08c35e1fb7fc,True,NaCl,4,

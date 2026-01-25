@@ -1,0 +1,161 @@
+Using configuration:
+out_dir: /home/liuxiangshuo/projects/crystallm-repro/out/nacl_ft_small
+eval_interval: 100
+log_interval: 10
+eval_iters_train: 20
+eval_iters_val: 20
+eval_only: false
+always_save_checkpoint: true
+init_from: finetune
+dataset: /home/liuxiangshuo/projects/crystallm-repro/data/nacl_min/tokens
+gradient_accumulation_steps: 4
+batch_size: 8
+block_size: 256
+n_layer: 8
+n_head: 8
+n_embd: 512
+dropout: 0.1
+bias: false
+learning_rate: 0.001
+max_iters: 1000
+weight_decay: 0.1
+beta1: 0.9
+beta2: 0.99
+grad_clip: 1.0
+decay_lr: true
+warmup_iters: 100
+lr_decay_iters: 100000
+min_lr: 0.0001
+device: cuda
+dtype: float16
+compile: false
+underrep_p: 0.0
+validate: true
+
+Creating /home/liuxiangshuo/projects/crystallm-repro/out/nacl_ft_small...
+Reading start indices from /home/liuxiangshuo/projects/crystallm-repro/data/nacl_min/tokens/starts.pkl...
+Found vocab_size = 371 (inside /home/liuxiangshuo/projects/crystallm-repro/data/nacl_min/tokens/meta.pkl)
+Resuming training from /home/liuxiangshuo/projects/crystallm-repro/out/nacl_ft_small...
+number of parameters: 25.36M
+step 0: train loss 0.6435, val loss 0.7154
+iter 0: loss 0.6320, time 424.11ms, mfu -100.00%
+iter 10: loss 0.1371, time 52.46ms, mfu 8.25%
+iter 20: loss 0.0492, time 61.94ms, mfu 8.12%
+iter 30: loss 0.0104, time 61.62ms, mfu 8.01%
+iter 40: loss 0.0436, time 65.78ms, mfu 7.87%
+iter 50: loss 0.0110, time 63.18ms, mfu 7.77%
+iter 60: loss 0.0282, time 65.65ms, mfu 7.65%
+iter 70: loss 0.0199, time 61.07ms, mfu 7.59%
+iter 80: loss 0.0114, time 55.33ms, mfu 7.61%
+iter 90: loss 0.0209, time 55.82ms, mfu 7.63%
+step 100: train loss 0.0110, val loss 1.0262
+saving checkpoint to /home/liuxiangshuo/projects/crystallm-repro/out/nacl_ft_small...
+iter 100: loss 0.0100, time 2216.55ms, mfu 6.88%
+iter 110: loss 0.0508, time 62.54ms, mfu 6.89%
+iter 120: loss 0.0158, time 62.65ms, mfu 6.89%
+iter 130: loss 0.0166, time 66.03ms, mfu 6.86%
+iter 140: loss 0.0167, time 65.52ms, mfu 6.83%
+iter 150: loss 0.0116, time 61.94ms, mfu 6.85%
+iter 160: loss 0.0112, time 60.41ms, mfu 6.88%
+iter 170: loss 0.0102, time 64.28ms, mfu 6.86%
+iter 180: loss 0.0337, time 62.30ms, mfu 6.87%
+iter 190: loss 0.0104, time 64.52ms, mfu 6.85%
+step 200: train loss 0.0088, val loss 1.4732
+saving checkpoint to /home/liuxiangshuo/projects/crystallm-repro/out/nacl_ft_small...
+iter 200: loss 0.0101, time 2078.15ms, mfu 6.19%
+iter 210: loss 0.0144, time 62.30ms, mfu 6.27%
+iter 220: loss 0.0087, time 63.46ms, mfu 6.32%
+iter 230: loss 0.0081, time 62.77ms, mfu 6.38%
+iter 240: loss 0.0095, time 63.94ms, mfu 6.42%
+iter 250: loss 0.0087, time 61.43ms, mfu 6.48%
+iter 260: loss 0.0094, time 66.46ms, mfu 6.48%
+iter 270: loss 0.0088, time 63.25ms, mfu 6.52%
+iter 280: loss 0.0133, time 61.79ms, mfu 6.57%
+iter 290: loss 0.0081, time 61.74ms, mfu 6.61%
+step 300: train loss 0.0087, val loss 2.0711
+saving checkpoint to /home/liuxiangshuo/projects/crystallm-repro/out/nacl_ft_small...
+iter 300: loss 0.0112, time 2437.02ms, mfu 5.97%
+iter 310: loss 0.0123, time 52.62ms, mfu 6.19%
+iter 320: loss 0.0104, time 53.51ms, mfu 6.38%
+iter 330: loss 0.0078, time 55.80ms, mfu 6.52%
+iter 340: loss 0.0153, time 56.18ms, mfu 6.64%
+iter 350: loss 0.0083, time 52.01ms, mfu 6.81%
+iter 360: loss 0.0121, time 53.00ms, mfu 6.94%
+iter 370: loss 0.0111, time 53.11ms, mfu 7.06%
+iter 380: loss 0.0554, time 62.04ms, mfu 7.05%
+iter 390: loss 0.0101, time 59.29ms, mfu 7.08%
+step 400: train loss 0.0089, val loss 2.1277
+saving checkpoint to /home/liuxiangshuo/projects/crystallm-repro/out/nacl_ft_small...
+iter 400: loss 0.0097, time 2225.83ms, mfu 6.39%
+iter 410: loss 0.0080, time 62.74ms, mfu 6.44%
+iter 420: loss 0.0085, time 61.56ms, mfu 6.50%
+iter 430: loss 0.0193, time 61.87ms, mfu 6.55%
+iter 440: loss 0.0088, time 60.59ms, mfu 6.61%
+iter 450: loss 0.0082, time 63.24ms, mfu 6.63%
+iter 460: loss 0.0152, time 59.61ms, mfu 6.69%
+iter 470: loss 0.0115, time 61.53ms, mfu 6.73%
+iter 480: loss 0.0102, time 59.01ms, mfu 6.79%
+iter 490: loss 0.0076, time 64.39ms, mfu 6.78%
+step 500: train loss 0.0082, val loss 2.0839
+saving checkpoint to /home/liuxiangshuo/projects/crystallm-repro/out/nacl_ft_small...
+iter 500: loss 0.0078, time 2456.17ms, mfu 6.12%
+iter 510: loss 0.0090, time 55.63ms, mfu 6.29%
+iter 520: loss 0.0079, time 61.64ms, mfu 6.36%
+iter 530: loss 0.0088, time 61.58ms, mfu 6.43%
+iter 540: loss 0.0085, time 61.69ms, mfu 6.48%
+iter 550: loss 0.0088, time 63.52ms, mfu 6.52%
+iter 560: loss 0.0081, time 56.38ms, mfu 6.63%
+iter 570: loss 0.0080, time 63.56ms, mfu 6.65%
+iter 580: loss 0.0078, time 61.50ms, mfu 6.69%
+iter 590: loss 0.0081, time 61.28ms, mfu 6.73%
+step 600: train loss 0.0106, val loss 1.9534
+saving checkpoint to /home/liuxiangshuo/projects/crystallm-repro/out/nacl_ft_small...
+iter 600: loss 0.0112, time 2395.16ms, mfu 6.07%
+iter 610: loss 0.0108, time 60.53ms, mfu 6.18%
+iter 620: loss 0.0131, time 66.87ms, mfu 6.21%
+iter 630: loss 0.0086, time 63.49ms, mfu 6.27%
+iter 640: loss 0.0092, time 59.13ms, mfu 6.37%
+iter 650: loss 0.0086, time 59.82ms, mfu 6.46%
+iter 660: loss 0.0079, time 51.32ms, mfu 6.66%
+iter 670: loss 0.0082, time 60.89ms, mfu 6.70%
+iter 680: loss 0.0074, time 61.87ms, mfu 6.73%
+iter 690: loss 0.0099, time 55.83ms, mfu 6.83%
+step 700: train loss 0.0079, val loss 2.3132
+saving checkpoint to /home/liuxiangshuo/projects/crystallm-repro/out/nacl_ft_small...
+iter 700: loss 0.0089, time 2452.01ms, mfu 6.17%
+iter 710: loss 0.0077, time 61.84ms, mfu 6.25%
+iter 720: loss 0.0106, time 61.64ms, mfu 6.33%
+iter 730: loss 0.0108, time 60.32ms, mfu 6.41%
+iter 740: loss 0.0079, time 63.75ms, mfu 6.45%
+iter 750: loss 0.0083, time 61.43ms, mfu 6.51%
+iter 760: loss 0.0098, time 63.60ms, mfu 6.54%
+iter 770: loss 0.0077, time 64.68ms, mfu 6.55%
+iter 780: loss 0.0076, time 61.97ms, mfu 6.60%
+iter 790: loss 0.0088, time 63.03ms, mfu 6.62%
+step 800: train loss 0.0091, val loss 2.1803
+saving checkpoint to /home/liuxiangshuo/projects/crystallm-repro/out/nacl_ft_small...
+iter 800: loss 0.0095, time 2152.88ms, mfu 5.98%
+iter 810: loss 0.0088, time 61.62ms, mfu 6.08%
+iter 820: loss 0.0084, time 61.67ms, mfu 6.18%
+iter 830: loss 0.0087, time 53.13ms, mfu 6.37%
+iter 840: loss 0.0078, time 61.60ms, mfu 6.44%
+iter 850: loss 0.0090, time 56.72ms, mfu 6.56%
+iter 860: loss 0.0083, time 61.64ms, mfu 6.60%
+iter 870: loss 0.0094, time 62.59ms, mfu 6.63%
+iter 880: loss 0.0126, time 57.54ms, mfu 6.72%
+iter 890: loss 0.0072, time 62.97ms, mfu 6.74%
+step 900: train loss 0.0079, val loss 2.5771
+saving checkpoint to /home/liuxiangshuo/projects/crystallm-repro/out/nacl_ft_small...
+iter 900: loss 0.0080, time 2252.46ms, mfu 6.08%
+iter 910: loss 0.0123, time 56.10ms, mfu 6.25%
+iter 920: loss 0.0128, time 61.46ms, mfu 6.33%
+iter 930: loss 0.0114, time 56.05ms, mfu 6.46%
+iter 940: loss 0.0105, time 61.49ms, mfu 6.52%
+iter 950: loss 0.0088, time 57.20ms, mfu 6.63%
+iter 960: loss 0.0111, time 58.41ms, mfu 6.70%
+iter 970: loss 0.0087, time 61.67ms, mfu 6.74%
+iter 980: loss 0.0100, time 61.71ms, mfu 6.76%
+iter 990: loss 0.0085, time 61.68ms, mfu 6.79%
+step 1000: train loss 0.0080, val loss 2.6899
+saving checkpoint to /home/liuxiangshuo/projects/crystallm-repro/out/nacl_ft_small...
+iter 1000: loss 0.0087, time 2100.13ms, mfu 6.13%
