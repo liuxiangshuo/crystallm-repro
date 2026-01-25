@@ -1,4 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.ipynb_checkpoints/
 
 # Envs
 .venv/
 venv/
+
+# logs & outputs
+outputs/
+checkpoints/
+wandb/
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
