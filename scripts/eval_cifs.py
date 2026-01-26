@@ -1,70 +1,82 @@
-from pathlib import Path
-from pymatgen.core import Structure
-import csv, hashlib
-from collections import Counter
 import argparse
+from pathlib import Path
+import pandas as pd
 
-def file_hash16(p: Path) -> str:
-    h = hashlib.sha256()
-    h.update(p.read_bytes())
-    return h.hexdigest()[:16]
+from pymatgen.core import Structure
+from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+
+def safe_spacegroup(struct: Structure):
+    try:
+        sga = SpacegroupAnalyzer(struct, symprec=0.1)
+        return int(sga.get_space_group_number()), str(sga.get_space_group_symbol())
+    except Exception:
+        return None, None
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cif_dir", required=True, help="Directory containing CIF files")
     ap.add_argument("--out_csv", required=True, help="Output CSV path")
-    ap.add_argument("--pattern", default="*.cif", help="Glob pattern, default: *.cif")
     args = ap.parse_args()
 
-    indir = Path(args.cif_dir).expanduser().resolve()
-    out = Path(args.out_csv).expanduser().resolve()
-
-    if not indir.exists():
-        raise SystemExit(f"[ERROR] cif_dir not found: {indir}")
-
-    files = sorted(indir.glob(args.pattern))
-    # also accept .CIF if pattern is default
-    if args.pattern == "*.cif":
-        files += sorted(indir.glob("*.CIF"))
-
-    if len(files) == 0:
-        raise SystemExit(f"[ERROR] No files matched under {indir} with pattern {args.pattern}")
-
-    out.parent.mkdir(parents=True, exist_ok=True)
+    cif_dir = Path(args.cif_dir)
+    paths = sorted(list(cif_dir.rglob("*.cif")))
 
     rows = []
-    ok = 0
-    formula_counter = Counter()
-
-    for p in files:
-        rec = {"file": p.name, "hash16": file_hash16(p), "parse_ok": False,
-               "reduced_formula": "", "sites": "", "error": ""}
+    for p in paths:
+        row = {
+            "file": p.name,
+            "parse_ok": False,
+            "reduced_formula": None,
+            "sites": None,
+            "spacegroup_number": None,
+            "spacegroup_symbol": None,
+            "error": None,
+        }
         try:
-            s = Structure.from_file(str(p))
-            rec["parse_ok"] = True
-            rec["reduced_formula"] = s.composition.reduced_formula
-            rec["sites"] = len(s)
-            ok += 1
-            formula_counter[rec["reduced_formula"]] += 1
+            s = Structure.from_file(p)
+            row["parse_ok"] = True
+            row["reduced_formula"] = s.composition.reduced_formula
+            row["sites"] = len(s)
+            sg_num, sg_sym = safe_spacegroup(s)
+            row["spacegroup_number"] = sg_num
+            row["spacegroup_symbol"] = sg_sym
         except Exception as e:
-            rec["error"] = f"{type(e).__name__}: {str(e)[:160]}"
-        rows.append(rec)
+            row["error"] = str(e)
+        rows.append(row)
 
-    with out.open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=["file","hash16","parse_ok","reduced_formula","sites","error"])
-        w.writeheader()
-        for r in rows:
-            w.writerow(r)
+    df = pd.DataFrame(rows)
+    out_csv = Path(args.out_csv)
+    out_csv.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(out_csv, index=False)
+    print(f"written: {out_csv}")
 
-    total = len(rows)
-    unique_all = len({r["hash16"] for r in rows})
-    unique_valid = len({r["hash16"] for r in rows if r["parse_ok"]})
+    n = len(df)
+    vdf = df[df["parse_ok"] == True]
+    valid = len(vdf)
 
-    print("written:", out)
-    print("validity:", ok, "/", total)
-    print("uniqueness(all):", unique_all, "/", total)
-    print("uniqueness(valid):", unique_valid, "/", max(ok, 1))
-    print("formula counts:", dict(formula_counter))
+    print(f"validity: {valid} / {n}")
+
+    # uniqueness: all vs valid (by filename here; if you later add struct_hash, update accordingly)
+    print(f"uniqueness(all): {df['file'].nunique()} / {n}")
+    print(f"uniqueness(valid): {vdf['file'].nunique()} / {valid if valid else 1}")
+
+    # formula counts
+    if valid:
+        fc = vdf["reduced_formula"].value_counts().to_dict()
+    else:
+        fc = {}
+    print(f"formula counts: {fc}")
+
+    # spacegroup stats
+    if valid:
+        sg_valid = vdf.dropna(subset=["spacegroup_number"])
+        uniq_sg = int(sg_valid["spacegroup_number"].nunique())
+        sg_counts = sg_valid["spacegroup_number"].value_counts().head(20).to_dict()
+    else:
+        uniq_sg = 0
+        sg_counts = {}
+    print(f"spacegroup unique(valid): {uniq_sg}")
+    print(f"spacegroup counts(top20): {sg_counts}")
 
 if __name__ == "__main__":
     main()
