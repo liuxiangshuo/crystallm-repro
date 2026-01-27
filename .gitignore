@@ -33,3 +33,27 @@ eval_demo.csv
 # backups
 *.bak
 *.bak2
+
+# VSCode
+.vscode/
+
+# External code / weights
+external/CrystaLLM/
+external/**/ckpt.pt
+
+# Training outputs
+out/**
+
+# Heavy report artifacts
+reports/**/raw/
+reports/**/processed/
+reports/**/processed__too_large_backup/
+reports/**/*.log
+reports/**/driver_debug.log
+reports/**/summary_run.log
+
+# Keep summaries/config
+!reports/**/summary.csv
+!reports/**/summary.md
+!reports/**/config.json
+
