@@ -1,169 +1,209 @@
-CrystaLLM Reproduction / 复现记录
-本仓库记录我在学校 GPU 服务器上复现 CrystaLLM（生成晶体结构 CIF）的过程与结果。 This repo records my reproduction of CrystaLLM on a university GPU server (CIF generation + evaluation).
+CrystaLLM Reproduction
 
-Overview / 总览
-What’s in this repo? / 仓库里有什么
-Demo 1 (Pretrained): 使用官方 CrystaLLM v1 small 在 GPU 上生成 NaCl CIF，并评估 validity/uniqueness
+This repository documents my reproduction and extensions of CrystaLLM on a university GPU server (CIF generation + evaluation + finetuning + prompt generalization), including a 10k-sample continued-training experiment and a paper-grade evaluation.
 
-Demo 2 (Finetune, minimal loop): 用 10 个 NaCl CIF 构造最小训练集，完成 train → generate → postprocess → evaluate 闭环，并记录证据
+Overview
 
-Links / 链接
-Blog (bilingual) / 博客长文（中英双语）: blog/crystallm-nacl-min-finetune.md
+What’s in this repo?
 
-Evidence / 证据: reports/nacl_min/train.log, reports/nacl_min/nacl_ft_small_eval.csv
+Demo1 (Pretrained): Generate CIFs with the official CrystaLLM v1 small checkpoint and evaluate validity/uniqueness.
 
-Finetune config / 微调配置: config/nacl_ft_small.yaml
+Demo2 (Minimal finetune loop): Finetune on 10 NaCl CIFs to close the loop: train → generate → postprocess → evaluate.
 
-Evaluator / 评估脚本: scripts/eval_cifs.py
+Demo5: Compare pretrained vs NaCl-only FT vs Mix154(strict) FT under identical sampling (n=200).
 
-Environment / 环境
-CN
-Remote dev: VS Code Remote-SSH 远程开发
+Demo6: Prompt sweep generalization across multiple prompts (eval.csv → summary.md/summary.csv).
 
-OS: Ubuntu 20.04（server）
+10k training (“mix10000”): Build a 10k tokenized subset from the official token stream, continue training from the pretrained checkpoint, then evaluate with:
 
-GPU: NVIDIA GeForce RTX 4090 D（CUDA 可用）
+temperature ablation (n=200, t=0.8/0.6/0.4)
 
-Python: 3.10（conda env：myenv）
+paper-grade eval (n=1000, t=0.6, 2 prompts)
 
-PyTorch: 2.0.1 + CUDA 11.8（conda 安装）
+Links
 
-Evaluation: pymatgen
+Blog: blog/crystallm-nacl-min-finetune.md
 
-EN
+Environment
+
 Remote dev: VS Code Remote-SSH
 
 OS: Ubuntu 20.04 (server)
 
-GPU: NVIDIA GeForce RTX 4090 D (CUDA available)
+GPU: RTX 4090D (CUDA available)
 
 Python: 3.10 (conda env: myenv)
 
-PyTorch: 2.0.1 + CUDA 11.8 (installed via conda)
+PyTorch: 2.0.1 + CUDA 11.8
 
-Evaluation: pymatgen
+Evaluation: pymatgen (eval outputs parse_ok, reduced_formula, spacegroup_number/symbol, error)
 
-Model / 模型权重
-CN
-官方 small checkpoint：external/CrystaLLM/crystallm_v1_small/ckpt.pt （服务器外网不稳定时建议本机下载后 scp 上传）
+Repository layout
 
-EN
-Official small checkpoint: external/CrystaLLM/crystallm_v1_small/ckpt.pt (When internet is unstable, download locally and scp to server)
+External upstream code (NOT tracked)
 
-Demo 1 — Generate NaCl with CrystaLLM v1 small (GPU)
-Goal / 目标
-CN: 使用官方预训练模型 CrystaLLM v1 small 在 GPU 上生成晶体结构（CIF），并用 pymatgen 验证可解析性（validity）与去重（uniqueness）。
+external/CrystaLLM/ (downloaded/zip+scp)
 
-EN: Use the official pretrained CrystaLLM v1 small on GPU to generate CIFs, then evaluate validity (pymatgen parse) and uniqueness (file hash).
+Pretrained small checkpoint: external/CrystaLLM/crystallm_v1_small/ckpt.pt
 
-Quickstart / 一键复现（生成 + 后处理 + 评估）
-Run inside external/CrystaLLM/ 在 external/CrystaLLM/ 目录下运行
+Finetune outputs
 
-0) Activate env / 激活环境
-Bash
+out/nacl_ft_small/
+
+out/mix154_ft_small/
+
+out/mix10000_ft_small_v2/ (10k continued training; contains ckpt.pt)
+
+Key report artifacts
+
+Demo5 (n=200): reports/demo5_compare_n200/summary.md
+
+Demo6 (n=100): reports/demo6_prompt_sweep_n100/summary.md and summary.csv
+
+mix10000 temperature sweep (n=200): reports/demo6_plus10k_n200/summary_t0.{8,6,4}.md/.csv
+
+Paper-grade eval (n=1000, t=0.6): reports/demo6_plus10k_n1000/summary.md and summary.csv
+
+Core pipeline
+
+Generation → Postprocess → Eval → Summary
+
+sample.py generates sample_*.cif (writes into the current working directory)
+
+postprocess.py cleans/standardizes CIFs into a processed directory
+
+scripts/eval_cifs.py parses processed CIFs → eval.csv with parse_ok, reduced_formula, spacegroup_number/symbol, error
+
+scripts/demo6_summarize_from_eval.py reads eval.csv only → summary.md/summary.csv (fast and stable; avoids parsing CIFs during summarization)
+
+Metrics
+
+validity = parse_ok ratio
+
+uniqueness(valid) = uniq_valid / num_valid (estimated from available eval fields; no structural hash)
+
+unique_formulas = number of distinct reduced_formula among valid samples
+
+unique_spacegroups = number of distinct spacegroup_number among valid samples
+
+top_formula / top_spacegroup = top-k frequency summaries
+
+Quickstart
+
+Activate environment
+cd ~/projects/crystallm-repro
+source ~/miniconda3/etc/profile.d/conda.sh
 conda activate myenv
-1) Generate CIFs (GPU) / 生成 CIF（GPU）
-CN：prompt 使用 data_Na2Cl2；采样：top_k=5、max_new_tokens=2000、num_samples=10 EN：prompt data_Na2Cl2; sampling: top_k=5, max_new_tokens=2000, num_samples=10
+python -V
 
-Bash
-python bin/sample.py \
-  out_dir=crystallm_v1_small \
-  start=$'data_Na2Cl2\n' \
-  num_samples=10 \
-  top_k=5 \
-  max_new_tokens=2000 \
-  device=cuda \
-  dtype=float16 \
-  target=file
-会在当前目录生成 sample_1.cif ... sample_10.cif。
+Demo6 (n=100) — Prompt Sweep
 
-2) Postprocess / 后处理（规范化 CIF）
-Bash
-rm -rf demo_raw demo_processed
-mkdir -p demo_raw demo_processed
-mv sample_*.cif demo_raw/
+Artifacts
 
-python bin/postprocess.py demo_raw demo_processed
-3) Validate one sample (pymatgen) / 单样本解析验证
-Bash
-python -c "from pymatgen.core import Structure; s=Structure.from_file('demo_processed/sample_1.cif'); print('OK parsed'); print('formula:', s.composition.formula); print('reduced:', s.composition.reduced_formula); print('sites:', len(s))"
-Expected example output / 期望示例输出：
+reports/demo6_prompt_sweep_n100/summary.md
 
-Plaintext
-formula: Na2 Cl2
-reduced: NaCl
-sites: 4
-4) Evaluate validity & uniqueness / 批量评估
-使用本仓库的参数化评估脚本：scripts/eval_cifs.py
+reports/demo6_prompt_sweep_n100/summary.csv
 
-Bash
-cd ../..  # back to repo root
-python scripts/eval_cifs.py \
-  --cif_dir out/demo_processed_or_your_dir \
-  --out_csv out/eval_demo1.csv
-Demo 2 — Minimal NaCl Finetune Loop / 最小 NaCl 微调闭环
-Goal / 目标
-CN: 用 10 个 NaCl CIF 构造“最小可训练数据集”，在 small checkpoint 上微调，完成 train → generate → postprocess → evaluate 的闭环，并输出可审计证据。
+Re-summarize from eval.csv
+python scripts/demo6_summarize_from_eval.py
+--root reports/demo6_prompt_sweep_n100
+--out_csv reports/demo6_prompt_sweep_n100/summary.csv
+--out_md reports/demo6_prompt_sweep_n100/summary.md
+--topk 8
 
-EN: Build a minimal trainable dataset from 10 NaCl CIFs, finetune from the small checkpoint, and close the loop: train → generate → postprocess → evaluate, with auditable artifacts.
+10k tokenized subset → mix10000 training
 
-Key Results / 关键结果（真实输出）
-validity: 10 / 10
+A) Official tokenized data extracted path
+data/official/tokens_v1_train_val/mp_oqmd_nomad_cifs_semisymm_Z_props_2/{train.bin,val.bin,meta.pkl}
 
-reduced formula NaCl: 10 / 10
+B) Build a 10k subset by slicing the token stream at the data_ marker
+Script: scripts/subset_tokenized_by_data_prefix.py
 
-uniqueness(valid): 4 / 10
+IN_DIR=data/official/tokens_v1_train_val/mp_oqmd_nomad_cifs_semisymm_Z_props_2
+OUT_DIR=data/datasets/mix10000_tokenized
 
-Evidence / 证据：
+python scripts/subset_tokenized_by_data_prefix.py
+--in_dir "$IN_DIR"
+--out_dir "$OUT_DIR"
+--n_train 9000
+--n_val 1000
+--min_len 32
 
-training log: reports/nacl_min/train.log
+C) Continue training on the 10k subset (mix10000)
 
-eval csv: reports/nacl_min/nacl_ft_small_eval.csv
+Key gotchas (critical)
 
-blog post: blog/crystallm-nacl-min-finetune.md
+block_size must be 1024 (matches the pretrained small checkpoint)
 
-Quickstart / 一键复现（微调 + 生成 + 评估）
-Notes / 注意
-external/CrystaLLM/ 不纳入 git（需要你自己准备上游代码与 checkpoint）
+use init_from: resume and ensure ckpt.pt exists inside out_dir
 
-训练配置文件：config/nacl_ft_small.yaml
+pretrained ckpt reports iter=100000; to train +10k steps set max_iters=110000 (absolute)
 
-评估脚本：scripts/eval_cifs.py
+ensure checkpoint saving; verify ckpt.pt mtime changes before evaluating
 
-1) Train (finetune) / 微调训练
-Bash
-cd external/CrystaLLM
-python bin/train.py --config ../../config/nacl_ft_small.yaml 2>&1 | tee ../../out/nacl_ft_small/train.log
-2) Generate + postprocess / 生成 + 后处理
-Bash
-rm -f sample_*.cif
+Training prep
+mkdir -p out/mix10000_ft_small_v2
+cp -f external/CrystaLLM/crystallm_v1_small/ckpt.pt out/mix10000_ft_small_v2/ckpt.pt
 
-python bin/sample.py \
-  out_dir=../../out/nacl_ft_small \
-  start=$'data_Na2Cl2\n' \
-  num_samples=10 \
-  top_k=5 \
-  max_new_tokens=2000 \
-  device=cuda \
-  dtype=float16 \
-  target=file
+Train
+python external/CrystaLLM/bin/train.py --config config/mix10000_ft_small.yaml
 
-mkdir -p ../../out/nacl_ft_small_gen_raw
-mv sample_*.cif ../../out/nacl_ft_small_gen_raw/
+Verify ckpt updated (critical)
+stat -c "%y %s %n" out/mix10000_ft_small_v2/ckpt.pt
 
-python bin/postprocess.py \
-  ../../out/nacl_ft_small_gen_raw \
-  ../../out/nacl_ft_small_gen_processed
-3) Evaluate / 评估
-Bash
-cd ../..
-python scripts/eval_cifs.py \
-  --cif_dir out/nacl_ft_small_gen_processed \
-  --out_csv out/nacl_ft_small_eval.csv
-Notes / 备注
-Demo 2 的最小数据集会强烈过拟合（train loss ↓，val loss ↑），这是极小样本的预期现象；其意义在于验证工程闭环可用。
+Demo6 + mix10000 evaluation (baseline vs mix154 vs mix10000)
 
-若要提升生成多样性与泛化，需要扩大数据集（多化学式/空间群/晶胞变化）并调整采样策略（temperature、top_k/top_p 等）。
+Script
 
-License / 许可证与致谢
-This repo is a reproduction log. Please follow the upstream CrystaLLM license and citation requirements. 本仓库为复现记录，请遵循上游 CrystaLLM 的许可证与引用要求。
+scripts/demo6_run_plus10k.sh
+
+Temperature ablation (n=200; saved summaries)
+
+reports/demo6_plus10k_n200/summary_t0.8.md/.csv
+
+reports/demo6_plus10k_n200/summary_t0.6.md/.csv
+
+reports/demo6_plus10k_n200/summary_t0.4.md/.csv
+
+Temperature sweep summary (mix10000, 3 prompts, n=200, top_k=5, max_new_tokens=1000)
+
+t=0.8: validity 0.8667, uniqueness 0.2210, formula_unique 21.33, sg_unique 6.33
+
+t=0.6: validity 0.9150, uniqueness 0.1934, formula_unique 22.67, sg_unique 3.00
+
+t=0.4: validity 0.9450, uniqueness 0.1371, formula_unique 18.33, sg_unique 2.67
+Takeaway: lower temperature improves validity but reduces diversity; t=0.6 is a better compromise.
+
+Paper-grade evaluation (n=1000, t=0.6; prompts: LiFePO4 + Na2Cl2)
+Artifacts
+
+reports/demo6_plus10k_n1000/summary.md
+
+reports/demo6_plus10k_n1000/summary.csv
+
+Macro-average (2 prompts, n=1000, t=0.6)
+
+baseline: validity 1.0000, uniqueness 0.0230, unique_formulas 7, unique_SG 14.0
+
+mix154: validity 0.9955, uniqueness 0.0473, unique_formulas 32, unique_SG 14.5
+
+mix10000: validity 0.8785, uniqueness 0.1493, unique_formulas 87, unique_SG 5.5
+Interpretation: mix154 is a stable upgrade; mix10000 increases diversity strongly but reduces validity and collapses SG diversity.
+
+Known pitfalls
+
+conda not found / python2 issues: source conda.sh then conda activate myenv
+
+bash shows “>” and appears to hang: unfinished multiline command; Ctrl+C to cancel
+
+sample.py writes to cwd: always cd into raw_dir; use absolute paths in scripts
+
+eval_cifs.py CLI requires --cif_dir and --out_csv
+
+block_size mismatch: pretrained ckpt uses block_size=1024
+
+checkpoint saving: verify out/mix10000_ft_small_v2/ckpt.pt mtime updates before evaluating
+
+License & citation
+
+This repo is a reproduction log. Please follow upstream CrystaLLM license and citation requirements.
