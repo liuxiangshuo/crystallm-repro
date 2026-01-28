@@ -1,482 +1,485 @@
-CrystaLLM Reproduction: From a Minimal NaCl Finetune Loop to Prompt-Sweep Evaluation (Engineering-Focused)
+# CrystaLLM Reproduction: From a Minimal NaCl Finetune Loop to Prompt-Sweep Evaluation (Engineering-Focused)
 
-Scope: This post is an engineering reproduction of the CrystaLLM workflow—not a paper-level performance reproduction. The goal is to build a re-runnable, auditable, end-to-end pipeline:
-train → generate → postprocess → parse/evaluate → summarize.
+**Scope.** This is an _engineering reproduction_ of the CrystaLLM workflow — not a paper-level performance reproduction. The goal is to build a **re-runnable, auditable end-to-end pipeline**:
 
-TL;DR
+**train → generate → postprocess → parse/evaluate → summarize**
+
+---
+
+## Table of contents
+
+- TL;DR
+    
+- Environment and constraints
+    
+- Repo layout
+    
+- Experiment 1: Minimal NaCl finetune loop (NaCl-10)
+    
+- Engineering fixes
+    
+- Experiment 2: Demo5 comparison (n=200)
+    
+- Experiment 3: Demo6 prompt sweep (n=100)
+    
+- Experiment 4: 10k subset continued training (mix10000)
+    
+- Experiment 5: Temperature ablation for mix10000 (n=200)
+    
+- Experiment 6: Paper-grade run (n=1000, t=0.6)
+    
+- What I would tune next
+    
+- Repro checklist
+    
+
+---
+
+## TL;DR
 
 On a restricted university GPU server (no sudo, unstable internet), I pushed CrystaLLM from “demo runs” to a complete pipeline that can:
 
-finetune on a dataset (even tiny)
+- finetune on a dataset (even tiny)
+    
+- generate CIF samples from prompts
+    
+- postprocess to parseable CIFs
+    
+- parse & evaluate with pymatgen and export CSV
+    
+- summarize results across multiple prompts/models
+    
 
-generate CIF samples from prompts
+### Minimal NaCl finetune (10 CIFs)
 
-postprocess to valid CIFs
+- validity: **10/10**
+    
+- NaCl hit rate: **10/10**
+    
+- uniqueness(valid): **4/10**
+    
 
-parse & evaluate with pymatgen and export CSV
-
-summarize results across multiple prompts/models
-
-Minimal NaCl finetune (10 CIFs):
-
-validity: 10/10
-
-NaCl hit rate: 10/10
-
-uniqueness(valid): 4/10
 This is expected behavior for tiny data (fast overfit + mode collapse).
 
 Then I extended the workflow to:
 
-Demo5: n=200 comparison (baseline vs NaCl-only FT vs Mix154 FT)
-
-Demo6: prompt sweep (generalization under multiple composition prompts)
-
-Demo7: continued training on a 10k subset + temperature ablation + n=1000 “paper-grade” runs
-
-1. Environment & Constraints
-
-Remote dev: VS Code Remote-SSH
-
-Server: Ubuntu 20.04 (node01), RTX 4090D
-
-Permissions: no sudo; system Python lacks pip/venv
-
-Python: Miniconda ~/miniconda3, conda env myenv (Python 3.10.19)
-
-PyTorch: 2.0.1 + CUDA 11.8 (CUDA available)
-
-Networking: GitHub/Zenodo unreliable → download ZIP/weights locally, then scp to server
-
-2. Repo Layout (Recommended)
-
-Repro repo: ~/projects/crystallm-repro
-
-Upstream code (not committed): external/CrystaLLM
-
-Artifacts: out/ (avoid committing large checkpoints)
-
-Shareable evidence: reports/ (logs, CSVs, markdown summaries)
-
-crystallm-repro/
-  external/CrystaLLM/
-  data/
-    nacl_min/
-      raw_cifs/
-      tokens/
-        train.bin
-        val.bin
-        meta.pkl
-        tokens.tar.gz
-        starts.pkl
-  config/
-    nacl_ft_small.yaml
-    mix10000_ft_small.yaml
-  scripts/
-    eval_cifs.py
-    subset_tokenized_by_data_prefix.py
-    demo5_summarize.py
-    demo6_summarize.py
-  out/
-    nacl_ft_small/
-      ckpt.pt
-      train.log
-    nacl_ft_small_gen_raw/
-    nacl_ft_small_gen_processed/
-    nacl_ft_small_eval.csv
-  reports/
-    demo5_compare_n200/
-    demo6_prompt_sweep_n100/
-    demo6_plus10k_n200/
-    demo6_plus10k_n1000/
-
-3. Goal: A Reproducible, Auditable Loop
-
-This project is not about retraining the paper’s best model. It’s about making the workflow robust and repeatable:
-
-Build a dataset from parseable CIFs
-
-CIF → tokens → finetune
-
-Generate CIFs from prompts using the trained checkpoint
-
-Postprocess, parse/evaluate with pymatgen, export CSV
-
-Summarize results across runs/models/prompts
-
-4. Minimal Dataset: “NaCl-10” to Validate the Pipeline
-
-Under unstable network constraints, the fastest path to test the training pipeline is:
-
-generate a tiny dataset locally from a known-working demo path
-
-verify CIFs are parseable (pymatgen)
-
-finetune and ensure the entire loop completes end-to-end
-
-I generated 10 NaCl CIFs, verified parseability, then used them as a minimal training set.
-
-5. Key Engineering Fixes (What Broke, and What I Changed)
-5.1 block_size vs tiny token streams
-
-Default block_size=1024 fails on tiny datasets because sampling can require len(data) - block_size >= 0. With very few tokens you hit:
-
-len(data) - block_size < 0 → batch sampling breaks
-
-Fix: set block_size=256 for the minimal dataset experiments.
-
-5.2 Attention implementation mismatch (attn.bias)
-
-Some code paths assumed attn.bias exists for cropping, but certain attention implementations don’t have it.
-
-Fix: guard with hasattr(attn, "bias") before using it.
-
-5.3 “resume” vs “finetune” when shapes change
-
-After cropping / changing block size, parameter shapes can change. If you try to resume, optimizer states (AdamW momentum tensors) can conflict with new shapes.
-
-Fix: implement a true finetune mode:
-
-load model weights only
-
-do not restore optimizer/scaler state
-
-reset iteration counter to 0
-
-5.4 Parameterize the evaluator
-
-Original evaluator scripts were demo-specific (hardcoded paths like demo_processed and fixed output names).
-
-Fix: add argparse options such as:
-
---cif_dir
-
---out_csv
-
-This makes evaluation reusable across all experiments.
-
-6. Training Setup (Minimal NaCl Finetune)
-
-Init: small checkpoint weights (finetune mode)
-
-block_size=256, dtype=float16, compile=false
-
-max_iters=1000, save ckpt & compute train/val estimates every 100 iters
-
-7. Minimal Loop Results (NaCl-10)
-
-This validates the pipeline: train → generate → postprocess → parse/evaluate.
-
-Observations
-
-Training: train loss quickly drops to ~0.008 while val loss rises to ~2.x
-→ classic overfit, expected for tiny data
-
-Validity: postprocess produces no warnings; pymatgen parses 10/10
-
-Target hit: reduced formula is NaCl for 10/10
-
-Diversity: uniqueness(valid) 4/10 (repetition / collapse)
-
-Real log excerpt:
-
-step 0:    train loss 0.6435, val loss 0.7154
-...
-step 1000: train loss 0.0080, val loss 2.6899
-
-
-Real eval summary:
-
-validity: 10 / 10
-uniqueness(all): 4 / 10
-uniqueness(valid): 4 / 10
-formula counts: {'NaCl': 10}
-
-8. Discussion: Why This Overfits (and Why That’s Fine)
-
-This minimal experiment targets pipeline stability, not generalization:
-
-train↓, val↑: memorization dominates with tiny data
-
-NaCl 10/10: target bias is strong but composition collapses
-
-uniqueness 4/10: repetition indicates mode collapse
-
-To improve diversity:
-
-enlarge dataset (more compositions / space groups / cell variants)
-
-tune sampling (temperature, top_k/top_p)
-
-add stronger de-dup/filter metrics
-
-Rounding warnings during parsing are typically numerical safeguards and don’t necessarily invalidate parse_ok.
-
-9. Repro Commands (Minimal Loop)
-
-When internet is unreliable: download code/weights locally, then scp to the server.
-
-Train
-cd $REPRO/external/CrystaLLM
-python bin/train.py --config $REPRO/config/nacl_ft_small.yaml 2>&1 | tee $REPRO/out/nacl_ft_small/train.log
-
-Generate + Postprocess
-cd $REPRO/external/CrystaLLM
-
-rm -f sample_*.cif
-python bin/sample.py \
-  out_dir=$REPRO/out/nacl_ft_small \
-  start=$'data_Na2Cl2\n' \
-  num_samples=10 \
-  top_k=5 \
-  max_new_tokens=2000 \
-  device=cuda \
-  dtype=float16 \
-  target=file
-
-mkdir -p $REPRO/out/nacl_ft_small_gen_raw
-mv sample_*.cif $REPRO/out/nacl_ft_small_gen_raw/
-
-python bin/postprocess.py \
-  $REPRO/out/nacl_ft_small_gen_raw \
-  $REPRO/out/nacl_ft_small_gen_processed
-
-Evaluate
-cd $REPRO
-python scripts/eval_cifs.py \
-  --cif_dir $REPRO/out/nacl_ft_small_gen_processed \
-  --out_csv $REPRO/out/nacl_ft_small_eval.csv
-
-10. Demo5 (n=200): Baseline vs NaCl-only FT vs Mix154 FT
-
-Prompt: data_Na2Cl2
-Sampling: top_k=5, max_new_tokens=2000, seed=123, device=cuda, target=file
-Generate 200 samples per model. Same pipeline: generate → postprocess → pymatgen parse/eval.
-
-Model	Validity	Formula counts (valid, top8)	Uniqueness (valid)	Avg sites (valid)	Unique SG (valid)
-baseline	200/200 (100.0%)	{'NaCl': 159, 'NaClO3': 12, 'NaClO2': 8, 'NaClF2': 6, 'NaClO': 6, 'NaClO4': 4, 'NaClF4': 2, 'NaClF': 2, 'others': 1}	200	4.99	21
-nacl_ft_small	196/200 (98.0%)	{'NaCl': 195, 'Na': 1}	196	3.98	7
-mix154_ft_small	199/200 (99.5%)	{'NaCl': 64, 'NaClO3': 59, 'NaClO2': 35, 'NaClF': 11, 'NaClO10': 9, 'NaClF2': 6, 'NaClO': 3, 'NaClF3': 2, 'others': 10}	199	10.08	12
-Key takeaways
-
-Validity: baseline 200/200, NaCl-only 196/200, Mix154 199/200
-
-Collapse vs diversity: NaCl-only collapses almost entirely to NaCl (195/196 valid). Mix154 spreads probability mass across multiple formulas.
-
-Space-group diversity: baseline 21, NaCl-only 7, Mix154 12 → NaCl-only FT sharply reduces SG coverage.
-
-Repro
-NUM_SAMPLES=200 bash scripts/demo5_run.sh DEMO5_ROOT=reports/demo5_compare_n200 TOPK=8
-python scripts/demo5_summarize.py
-
-11. Demo6: Prompt Sweep (Generalization Across Composition Prompts)
-
-In Demo6, I evaluate baseline / NaCl-only FT / Mix154(strict) FT under identical sampling across multiple composition prompts (e.g., Na2Cl2, Al2O3, BaTiO3, LiFePO4, MgO, SiO2, TiO2, …), generating N=100 per prompt and using CIF parsing parse_ok as the primary validity metric.
-
-High-level pattern:
-
-NaCl-only FT: excellent hit rate on NaCl-related prompts, but on non-NaCl prompts it frequently drifts back to NaCl → strong mode collapse, weak generalization
-
-baseline: tends to follow prompts more faithfully, but diversity can be limited
-
-Mix154(strict): maintains high validity while improving formula and space-group diversity across prompts
-
-(See reports/demo6_prompt_sweep_n100/summary.md for the full table.)
-
-12. Demo7: 10k Training Subset + Temperature Ablation + n=1000 Runs
-
-This section extends the workflow beyond curated small sets by continuing training on a 10k-sample tokenized subset derived from the official token stream.
-
-What changed vs Demo6
-
-Training data: small curated set → 10k subset from official token stream
-
-New model: mix10000 (continued training on 10k subset)
-
-Evaluation: same CSV → summary.md workflow, then compare:
-
-baseline (pretrained)
-
-mix154 (strict finetune)
-
-mix10000 (10k-subset continued training)
-
-12.1 Getting official tokenized data onto the server
-
-Download tokens_v1_train_val.tar.gz locally, then upload to server:
-
-# server
-mkdir -p ~/projects/crystallm-repro/data/official
-# scp tokens_v1_train_val.tar.gz into data/official/
-
-
-Extract:
-
-cd ~/projects/crystallm-repro
-mkdir -p data/official/tokens_v1_train_val
-tar -xzf data/official/tokens_v1_train_val.tar.gz -C data/official/tokens_v1_train_val
-
-find data/official/tokens_v1_train_val -maxdepth 3 -type f \
-  \( -name "train.bin" -o -name "val.bin" -o -name "meta.pkl" \) -print
-
-
-Example extracted path:
-
-data/official/tokens_v1_train_val/mp_oqmd_nomad_cifs_semisymm_Z_props_2/{train.bin,val.bin,meta.pkl}
-
-12.2 Building a 10k subset from the token stream (train=9000, val=1000)
-
-The official meta.pkl contains vocab metadata (stoi/itos/vocab_size), but not sample start indices.
-So I built a subset by scanning for the data_ marker token that denotes sample boundaries.
-
-Script:
-
-scripts/subset_tokenized_by_data_prefix.py
-
-Run:
-
-IN_DIR=data/official/tokens_v1_train_val/mp_oqmd_nomad_cifs_semisymm_Z_props_2
-OUT_DIR=data/datasets/mix10000_tokenized
-
-python scripts/subset_tokenized_by_data_prefix.py \
-  --in_dir "$IN_DIR" \
-  --out_dir "$OUT_DIR" \
-  --n_train 9000 \
-  --n_val 1000 \
-  --min_len 32
-
-ls -lh "$OUT_DIR"/{train.bin,val.bin,meta.pkl}
-
-
-Result:
-
-data/datasets/mix10000_tokenized/{train.bin,val.bin,meta.pkl}
-
-12.3 Training mix10000 (continued training from pretrained checkpoint)
-Pitfalls I hit (worth calling out)
-
-Checkpoint block_size mismatch: pretrained ckpt uses block_size=1024. If you set 2048, training can crash.
-
-init_from semantics: use init_from: resume and place ckpt.pt inside the output directory.
-
-Absolute vs delta iters: pretrained ckpt might report iter=100000. To train “+10k steps”, set max_iters: 110000.
-
-Checkpoint saving: if ckpt isn’t updating, evaluation silently uses old weights.
-
-Minimal config example:
-
-# config/mix10000_ft_small.yaml
-out_dir: out/mix10000_ft_small_v2
-init_from: resume
-dataset: data/datasets/mix10000_tokenized
-
-device: cuda
-dtype: float16
-compile: false
-
-batch_size: 16
-gradient_accumulation_steps: 8
-
-block_size: 1024
-max_iters: 110000
-eval_interval: 250
-log_interval: 10
-validate: true
-always_save_checkpoint: true
-
-
-Prepare output dir + ckpt:
-
-mkdir -p out/mix10000_ft_small_v2
-cp -f external/CrystaLLM/crystallm_v1_small/ckpt.pt out/mix10000_ft_small_v2/ckpt.pt
-
+- **Demo5**: n=200 comparison (baseline vs NaCl-only FT vs Mix154 FT)
+    
+- **Demo6**: prompt sweep (generalization under multiple composition prompts)
+    
+- **Demo7**: continued training on a **10k** subset + temperature ablation + n=1000 “paper-grade” runs
+    
+
+---
+
+## Environment and constraints
+
+### Setup
+
+- Remote dev: VS Code Remote-SSH
+    
+- Server: Ubuntu 20.04 (`node01`), RTX 4090D
+    
+- Permissions: no sudo; system Python lacks pip/venv
+    
+- Python: Miniconda `~/miniconda3`, conda env `myenv` (Python 3.10.19)
+    
+- PyTorch: 2.0.1 + CUDA 11.8 (CUDA available)
+    
+- Networking: GitHub/Zenodo unreliable on server  
+    → download ZIP/weights locally, then `scp` to server
+    
+
+---
+
+## Repo layout
+
+Recommended high-level structure:
+
+- Repro repo: `~/projects/crystallm-repro`
+    
+- Upstream code (not committed): `external/CrystaLLM`
+    
+- Artifacts: `out/` (avoid committing large checkpoints)
+    
+- Shareable evidence: `reports/` (logs, CSVs, markdown summaries)
+    
+
+Example layout (conceptual):
+
+crystallm-repro/  
+external/CrystaLLM/ # upstream (not tracked)  
+config/ # finetune configs  
+scripts/ # eval/summarize/subset tools  
+out/ # checkpoints and training runs (large)  
+reports/ # shareable summaries and CSV outputs  
+blog/ # long-form notes (this file)
+
+---
+
+## Experiment 1: Minimal NaCl finetune loop (NaCl-10)
+
+### Goal
+
+Prove the full loop is stable end-to-end (not generalization):
+
+- build a minimal dataset
+    
+- tokenize
+    
+- finetune from pretrained weights
+    
+- generate from prompt
+    
+- postprocess
+    
+- parse/evaluate with pymatgen
+    
+- export CSV evidence
+    
+
+### Setup
+
+- Init checkpoint: CrystaLLM v1 small (`external/CrystaLLM/crystallm_v1_small/ckpt.pt`)
+    
+- Dataset: 10 NaCl CIFs (tiny on purpose)
+    
+- Important settings: `dtype=float16`, `compile=false`, and a smaller `block_size` for tiny token streams
+    
+
+### Commands
 
 Train:
 
-python external/CrystaLLM/bin/train.py --config config/mix10000_ft_small.yaml
+`cd $REPRO/external/CrystaLLM python bin/train.py --config $REPRO/config/nacl_ft_small.yaml 2>&1 | tee $REPRO/out/nacl_ft_small/train.log`
 
+Generate + postprocess:
 
-Sanity check ckpt updated:
+`cd $REPRO/external/CrystaLLM  rm -f sample_*.cif python bin/sample.py \   out_dir=$REPRO/out/nacl_ft_small \   start=$'data_Na2Cl2\n' \   num_samples=10 \   top_k=5 \   max_new_tokens=2000 \   device=cuda \   dtype=float16 \   target=file  mkdir -p $REPRO/out/nacl_ft_small_gen_raw mv sample_*.cif $REPRO/out/nacl_ft_small_gen_raw/  python bin/postprocess.py \   $REPRO/out/nacl_ft_small_gen_raw \   $REPRO/out/nacl_ft_small_gen_processed`
 
-stat -c "%y %s %n" out/mix10000_ft_small_v2/ckpt.pt
+Evaluate:
 
-12.4 Prompt-sweep evaluation (baseline vs mix154 vs mix10000)
+`cd $REPRO python scripts/eval_cifs.py \   --cif_dir $REPRO/out/nacl_ft_small_gen_processed \   --out_csv $REPRO/out/nacl_ft_small_eval.csv`
 
-Small prompt suite:
+### Outputs
 
-Na2Cl2
+- Training log: `out/nacl_ft_small/train.log`
+    
+- Generated CIFs: `out/nacl_ft_small_gen_raw/`
+    
+- Postprocessed CIFs: `out/nacl_ft_small_gen_processed/`
+    
+- Eval CSV: `out/nacl_ft_small_eval.csv`
+    
 
-LiFePO4
+### Results
 
-BaTiO3 (also used for ablations)
+- validity: 10 / 10
+    
+- reduced_formula NaCl: 10 / 10
+    
+- uniqueness(valid): 4 / 10
+    
 
-Automation:
+Training behavior (expected with tiny data):
 
-scripts/demo6_run_plus10k.sh
+- train loss decreases rapidly (memorization)
+    
+- val loss increases (overfit)
+    
 
-Outputs:
+### Interpretation
 
-reports/demo6_plus10k_n{N}/summary.md
+This experiment is intentionally “too small to generalize.” Its value is that the **pipeline is runnable and auditable**.
 
-reports/demo6_plus10k_n{N}/summary.csv
+---
 
-12.5 Temperature ablation (n=200)
+## Engineering fixes
 
-I evaluated mix10000 with temperature ∈ {0.8, 0.6, 0.4} at n=200, and saved:
+These were the main issues I hit while making the pipeline robust and reusable.
 
-reports/demo6_plus10k_n200/summary_t0.8.md
+### 1) block_size vs tiny token streams
 
-reports/demo6_plus10k_n200/summary_t0.6.md
+**Problem:** default `block_size=1024` can fail on tiny datasets (not enough tokens to sample a full block).  
+**Fix:** use smaller block size (e.g., 256) for the minimal dataset runs.
 
-reports/demo6_plus10k_n200/summary_t0.4.md
+### 2) Attention implementation mismatch (attn.bias)
 
-Macro-average results (3 prompts, n=200):
+Some code paths assume `attn.bias` exists for cropping. Certain attention implementations do not have it.  
+**Fix:** guard usage with `hasattr(attn, "bias")`.
 
-temp	validity_mean	uniqueness_mean	formula_unique_mean	sg_unique_mean
-0.8	0.8667	0.2210	21.33	6.33
-0.6	0.9150	0.1934	22.67	3.00
-0.4	0.9450	0.1371	18.33	2.67
+### 3) “resume” vs “finetune” when shapes change
 
-Takeaway: lower temperature improves validity, but reduces diversity—especially space-group diversity.
-Among these, t=0.6 is the best balance.
+If you change shapes (e.g., block size), resuming optimizer/scaler state can fail.  
+**Fix:** implement a finetune mode:
 
-12.6 “Paper-grade” run (n=1000, t=0.6) on 2 prompts
+- load model weights only
+    
+- do not restore optimizer/scaler state
+    
+- reset iteration counter
+    
 
-Final run: n=1000, t=0.6, prompts {LiFePO4, Na2Cl2}. Macro-average:
+### 4) Parameterize the evaluator
 
-model	validity_mean	uniqueness_mean	formula_unique_mean	sg_unique_mean
-baseline	1.0000	0.0230	7	14.0
-mix154	0.9955	0.0473	32	14.5
-mix10000	0.8785	0.1493	87	5.5
+The original evaluator was demo-specific.  
+**Fix:** make `scripts/eval_cifs.py` reusable via argparse:
 
-Interpretation
+- `--cif_dir`
+    
+- `--out_csv`
+    
 
-mix154 is the “safe upgrade”: near-baseline validity with moderate diversity gains; SG diversity remains high.
+This made it reusable across Demo5/Demo6/Demo7 without rewriting scripts.
 
-mix10000 shows a strong validity–diversity trade-off: much higher formula diversity + uniqueness, but lower validity and collapsed SG diversity.
+---
 
-Prompt-level highlights:
+## Experiment 2: Demo5 comparison (n=200)
 
-LiFePO4: mix10000 diversity increases, but validity drops substantially
+### Goal
 
-Na2Cl2: mix10000 stays highly valid but can collapse strongly toward NaCl and a dominant space group
+Compare three checkpoints under identical sampling:
 
-13. What I’d Tune Next
+- baseline (pretrained)
+    
+- NaCl-only finetune
+    
+- Mix154(strict) finetune
+    
 
-To make mix10000 more usable in practice:
+### Setup
 
-lower learning rate (e.g., 1e-4 or 2e-4) and try fewer additional steps first (e.g., +2k) to avoid breaking parseability
+- Prompt: `data_Na2Cl2`
+    
+- Sampling: `top_k=5`, `max_new_tokens=2000`, `seed=123`, `device=cuda`, `target=file`
+    
+- n=200 per model
+    
 
-keep t=0.6 as default; also try reducing max_new_tokens (e.g., 800) to improve validity on hard prompts
+### Outputs
 
-add stricter quality filters / constraints to penalize malformed structures and encourage SG diversity
+- Summary: `reports/demo5_compare_n200/summary.md`
+    
 
-14. Repro Checklist (Things I Can Re-run)
+### Results (n=200, from summary)
 
-Build 10k tokenized subset: scripts/subset_tokenized_by_data_prefix.py
+- baseline: 200/200 valid; NaCl 159/200; Unique SG 21
+    
+- nacl_ft_small: 196/200 valid; NaCl 195/196; Unique SG 7
+    
+- mix154_ft_small: 199/200 valid; NaCl 64/199; Unique SG 12
+    
 
-Train continued model: external/CrystaLLM/bin/train.py --config config/mix10000_ft_small.yaml
+### Interpretation
 
-Evaluate + summarize: scripts/demo6_run_plus10k.sh and saved summaries (summary_t0.*.md)
+- NaCl-only finetune increases NaCl hit rate but collapses diversity (SG coverage drops).
+    
+- Mix154 spreads probability mass across multiple formulas and retains better diversity.
+    
 
-Final report: reports/demo6_plus10k_n1000/summary.md
+---
+
+## Experiment 3: Demo6 prompt sweep (n=100)
+
+### Goal
+
+Evaluate generalization across multiple composition prompts under identical sampling:
+
+- baseline vs NaCl-only vs Mix154(strict)
+    
+
+### Setup
+
+- Multiple prompts (e.g., Na2Cl2, Al2O3, BaTiO3, LiFePO4, MgO, SiO2, TiO2, …)
+    
+- n=100 per prompt per model
+    
+- Validity metric: `parse_ok` from CIF parsing
+    
+
+### Outputs
+
+- `reports/demo6_prompt_sweep_n100/summary.md`
+    
+- `reports/demo6_prompt_sweep_n100/summary.csv`
+    
+
+### High-level pattern observed
+
+- NaCl-only: strong collapse toward NaCl on non-NaCl prompts → weak generalization
+    
+- baseline: generally follows prompts but diversity is limited
+    
+- Mix154(strict): high validity and improved formula/spacegroup diversity
+    
+
+---
+
+## Experiment 4: 10k subset continued training (mix10000)
+
+### Goal
+
+Move beyond small curated sets by continuing training on a **10k-sample** tokenized subset derived from the official token stream, then evaluate prompt behavior and the validity–diversity trade-off.
+
+### Setup
+
+- Official tokenized archive: `tokens_v1_train_val.tar.gz` (download locally → scp to server)
+    
+- Extracted dataset path:
+    
+    - `data/official/tokens_v1_train_val/mp_oqmd_nomad_cifs_semisymm_Z_props_2/`
+        
+- Build a 10k subset:
+    
+    - train=9000, val=1000
+        
+    - slice by scanning for `data_` token boundaries in the token stream
+        
+- Continue training from pretrained ckpt:
+    
+    - pretrained ckpt reports `iter=100000`
+        
+    - to train +10k steps, set `max_iters=110000`
+        
+    - **block_size must match checkpoint** (`block_size=1024`)
+        
+
+### Commands
+
+Extract tokenized archive:
+
+`cd ~/projects/crystallm-repro mkdir -p data/official/tokens_v1_train_val tar -xzf data/official/tokens_v1_train_val.tar.gz -C data/official/tokens_v1_train_val  find data/official/tokens_v1_train_val -maxdepth 3 -type f \   \( -name "train.bin" -o -name "val.bin" -o -name "meta.pkl" \) -print`
+
+Build 10k tokenized subset:
+
+`IN_DIR=data/official/tokens_v1_train_val/mp_oqmd_nomad_cifs_semisymm_Z_props_2 OUT_DIR=data/datasets/mix10000_tokenized  python scripts/subset_tokenized_by_data_prefix.py \   --in_dir "$IN_DIR" \   --out_dir "$OUT_DIR" \   --n_train 9000 \   --n_val 1000 \   --min_len 32  ls -lh "$OUT_DIR"/{train.bin,val.bin,meta.pkl}`
+
+Train mix10000:
+
+`mkdir -p out/mix10000_ft_small_v2 cp -f external/CrystaLLM/crystallm_v1_small/ckpt.pt out/mix10000_ft_small_v2/ckpt.pt  python external/CrystaLLM/bin/train.py --config config/mix10000_ft_small.yaml`
+
+Critical sanity check (don’t skip):
+
+`stat -c "%y %s %n" out/mix10000_ft_small_v2/ckpt.pt`
+
+### Pitfalls that mattered
+
+- If checkpoint saving is not enabled/triggered, evaluation may silently use the old pretrained ckpt.  
+    Fix: ensure the config includes `always_save_checkpoint: true` (and validate saving by checking ckpt mtime).
+    
+
+---
+
+## Experiment 5: Temperature ablation for mix10000 (n=200)
+
+### Goal
+
+Control the validity–diversity trade-off by sweeping temperature for mix10000 while keeping everything else fixed.
+
+### Setup
+
+- Prompts: Na2Cl2, BaTiO3, LiFePO4
+    
+- n=200 per prompt per model
+    
+- Fixed: `top_k=5`, `max_new_tokens=1000`
+    
+- Temperature: t ∈ {0.8, 0.6, 0.4}
+    
+- Script: `scripts/demo6_run_plus10k.sh`
+    
+- Saved summaries:
+    
+    - `reports/demo6_plus10k_n200/summary_t0.8.*`
+        
+    - `reports/demo6_plus10k_n200/summary_t0.6.*`
+        
+    - `reports/demo6_plus10k_n200/summary_t0.4.*`
+        
+
+### Macro-average results (mix10000; 3 prompts; n=200)
+
+temp | validity_mean | uniqueness_mean | formula_unique_mean | sg_unique_mean  
+0.8 | 0.8667 | 0.2210 | 21.33 | 6.33  
+0.6 | 0.9150 | 0.1934 | 22.67 | 3.00  
+0.4 | 0.9450 | 0.1371 | 18.33 | 2.67
+
+### Interpretation
+
+- Lower temperature increases validity but reduces diversity (especially SG diversity).
+    
+- t=0.6 is a reasonable compromise for follow-up evaluations.
+    
+
+---
+
+## Experiment 6: Paper-grade run (n=1000, t=0.6)
+
+### Goal
+
+Run a larger evaluation (n=1000) at the selected compromise temperature (t=0.6), for stable conclusions.
+
+### Setup
+
+- Prompts: LiFePO4 and Na2Cl2
+    
+- n=1000 per prompt
+    
+- temperature=0.6, top_k=5, max_new_tokens=1000
+    
+- Compared:
+    
+    - baseline
+        
+    - mix154
+        
+    - mix10000
+        
+
+### Outputs
+
+- `reports/demo6_plus10k_n1000/summary.md`
+    
+- `reports/demo6_plus10k_n1000/summary.csv`
+    
+
+### Macro-average (2 prompts, n=1000)
+
+model | validity_mean | uniqueness_mean | formula_unique_mean | sg_unique_mean  
+baseline | 1.0000 | 0.0230 | 7 | 14.0  
+mix154 | 0.9955 | 0.0473 | 32 | 14.5  
+mix10000 | 0.8785 | 0.1493 | 87 | 5.5
+
+### Interpretation
+
+- mix154 is a “stable upgrade”: near-baseline validity, moderate diversity gains, SG diversity preserved.
+    
+- mix10000 shows a strong validity–diversity trade-off: large increase in formula diversity/uniqueness but reduced validity and collapsed SG diversity (notably on Na2Cl2).
+    
+
+---
+
+## What I would tune next
+
+To make mix10000 more usable:
+
+- reduce learning rate (e.g., 1e-4 or 2e-4) and train fewer additional steps first (+2k) to preserve parseability
+    
+- keep temperature around 0.6; try reducing max_new_tokens (e.g., 800) to improve validity on hard prompts
+    
+- add stricter filtering or structural hashing to make uniqueness(valid) more rigorous
+    
+
+---
+
+## Repro checklist
+
+Things I can re-run:
+
+- build 10k tokenized subset: `scripts/subset_tokenized_by_data_prefix.py`
+    
+- continued training: `external/CrystaLLM/bin/train.py --config config/mix10000_ft_small.yaml`
+    
+- eval + summarize: `scripts/demo6_run_plus10k.sh` and saved summaries `summary_t0.*`
+    
+- final report: `reports/demo6_plus10k_n1000/summary.md`
