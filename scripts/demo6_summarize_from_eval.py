@@ -5,8 +5,7 @@ from typing import Optional, List, Dict, Tuple
 import pandas as pd
 import hashlib
 
-MODEL_ORDER = ["baseline", "nacl_ft_small", "mix154_ft_small"]
-
+MODEL_ORDER = ["baseline", "mix154", "mix10000", "nacl_ft_small", "mix154_ft_small"]
 def _find_first_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
     cols = {c.lower(): c for c in df.columns}
     for cand in candidates:
