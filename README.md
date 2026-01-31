@@ -204,3 +204,13 @@ Interpretation: mix154 is a stable upgrade; mix10000 increases diversity strongl
 ## License & citation
 
 This repo is a reproduction log. Please follow upstream CrystaLLM license and citation requirements.
+## Demo8: End-to-end DPO driver
+
+Run the full pipeline (generate → validate → MatGL score → build pairs → DPO train → resample → re-score):
+
+```bash
+bash scripts/demo8_dpo_driver.sh LiFePO4
+bash scripts/demo8_dpo_driver.sh NaCl
+
+
+```
