@@ -57,3 +57,10 @@ reports/**/summary_run.log
 !reports/**/summary.md
 !reports/**/config.json
 
+
+# generated artifacts
+reports/demo*/
+reports/demo6_*/
+reports/demo6_prompt_sweep_*/
+reports/demo6_plus10k_*/
+config/*.yaml
